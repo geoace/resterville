@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RESTerville</title>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+        img {
+            max-width: 60%;
+            max-height: 60%;
+        }
+    </style>
+</head>
+<body>
+    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="RESTerville Logo">
+</body>
+</html>

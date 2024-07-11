@@ -1,0 +1,8 @@
+Flask
+GDAL==3.8.5
+arcgis
+psycopg2-binary
+dask[dataframe]
+requests
+google-cloud-storage
+pyproj
