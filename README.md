@@ -6,17 +6,17 @@ Once we complete feature testing, we'll make the repository publicly accessible 
 
 # GETTING STARTED FROM SOURCE
 #### Clone the repository
-'git clone https://github.com/geoace/resterville.git'
+`git clone https://github.com/geoace/resterville.git`
 
 #### Create a copy of the .env-template file and modify it according to your needs
-'cp .env-template .env'
+`cp .env-template .env`
 
-'nano .env'
+`nano .env`
 
 #### Add bucket credentials as needed
 
 #### Build the image
-'docker build -t resterville .'
+`docker build -t resterville .`
 
 #### Run the container, adding in postgresql connection strings (shown here as environment variables) and credentials (shown here as volumes) as needed
 docker run -d -p 8080:8080 --env-file ./env/.env \
@@ -49,9 +49,9 @@ Step 12. Create Secret
 
 #### Artifact Registry
 Step 13. Activate cloud shell and run the following commands (change region and project name as appropriate)
-'docker pull geoace/resterville:latest'
-'docker tag geoace/resterville:latest REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville:latest'
-'docker push REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville'
+`docker pull geoace/resterville:latest`
+`docker tag geoace/resterville:latest REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville:latest`
+`docker push REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville`
 
 #### Cloud Run
 Step 14. Create Service
@@ -76,7 +76,6 @@ This project is licensed under the GNU General Public License v3.0. See the LICE
 ### Attribution
 
 - **Google Cloud Components**: This project uses code or data provided by Google, available at https://cloud.google.com/python/docs/reference.
-
 
 
 
