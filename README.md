@@ -64,6 +64,8 @@ Step 19. Deploy and visit the GCP-provided HTTPS URL. If you see the RESTerville
 # Function Usage
 See API Documentation at https://resterville.org/docs.php#
 
+There are jupyter notebook "body builder" help documents here which help construct POST bodies: https://github.com/geoace/RESTerville_help
+
 # LICENSING
 
 This project is licensed under the GNU General Public License v3.0. See the LICENSE file for more information.
