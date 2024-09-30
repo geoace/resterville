@@ -40,7 +40,7 @@ def truncate_or_delete_table(table_name, service_name, schema='public'):
         cur = conn.cursor()
 
         # Construct the TRUNCATE SQL query
-        query = sql.SQL("TRUNCATE TABLE {}.{}").format(
+        query = sql.SQL("TRUNCATE TABLE {}.{} CASCADE").format(
             sql.Identifier(schema),
             sql.Identifier(table_name)
         )
