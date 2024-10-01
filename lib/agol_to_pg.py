@@ -32,6 +32,7 @@ from esri_to_geojson import esri_to_geojson
 from sql import truncate_or_delete_table
 from gcp import get_gcs_bucket
 from google.cloud.storage import Bucket
+from arcgis.gis import GIS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +40,14 @@ logging.basicConfig(level=logging.INFO)
 def setup_environment(path: str = None) -> None:
     """Set up the environment for PostgreSQL connection."""
     os.environ['PGSERVICEFILE'] = '/app/env/pg_service.conf' if path is None else path
+
+def _get_token() -> str:
+    portal_url = os.getenv('ARCGIS_PORTAL_URL')
+    user = os.getenv('ARCGIS_USER')
+    password = os.getenv('ARCGIS_PASSWORD')
+    gis = GIS(portal_url, user, password)
+
+    return gis.session.auth.token
 
 def fetch_data(url: str, start: int, count: int) -> Union[dict, None]:
     """Fetch data from the ArcGIS REST API.
@@ -56,7 +65,8 @@ def fetch_data(url: str, start: int, count: int) -> Union[dict, None]:
         'where': '1=1',  # A condition that's always true
         'outFields': '*',  # Fetch all fields
         'resultOffset': start,
-        'resultRecordCount': count
+        'resultRecordCount': count,
+        'token': _get_token()
     }
     response = requests.get(url, params=params)
     if response.status_code == 200:
@@ -81,7 +91,8 @@ def fetch_attachment_data(url: str, start: int, count: int) -> Union[dict, None]
         'definitionExpression': '1=1',  # A condition that's always true
         'returnUrl': True,
         'resultOffset': start,
-        'resultRecordCount': count
+        'resultRecordCount': count,
+        'token': _get_token()
     }
     response = requests.get(f'{url}/queryAttachments', params=params)
     if response.status_code == 200:
@@ -100,7 +111,7 @@ def fetch_source_epsg(api_url: str) -> Union[str, None]:
         Union[str, None]: The source EPSG code if found, otherwise None.
     """
     metadata_url = f"{api_url}?f=json"
-    response = requests.get(metadata_url)
+    response = requests.get(metadata_url, params={'token': _get_token()})
 
     if response.status_code == 200:
         metadata = response.json()
