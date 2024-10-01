@@ -22,6 +22,8 @@ import logging
 import os
 import sys
 import json
+from json import dumps
+import traceback
 
 # Configure logging to output to stdout immediately
 logging.basicConfig(
@@ -73,6 +75,8 @@ def run_pg_script():
             target_epsg = request.args.get('target_epsg')
             oid = request.args.get('oid')
             batch = request.args.get('batch', '1000')  # Fetch 'batch' parameter, default to '1000'
+            save_attachments = dumps(request.args.get('save_attachments', "false"))  # Default to 'false'
+            bucket = request.args.get('bucket', os.getenv('BUCKET'))
         elif request.method == 'POST':
             if not validate_api_key():
                 return Response("Invalid API key", status=403)
@@ -84,11 +88,16 @@ def run_pg_script():
             target_epsg = request.form.get('target_epsg')
             oid = request.form.get('oid')
             batch = request.form.get('batch', '1000')  # Fetch 'batch' parameter, default to '1000'
+            save_attachments = dumps(request.args.get('save_attachments', "false"))  # Default to 'false'
+            bucket = request.args.get('bucket', os.getenv('BUCKET'))
 
-        print(f"Received parameters: service_name={service_name}, url={url}, table={table}, schema={schema}, batch={batch}")
+        print(f"Received parameters: service_name={service_name}, url={url}, table={table}, schema={schema}, batch={batch}", "save_attachments={save_attachments}", "bucket={bucket}")  # Debug print
 
         if not service_name or not url or not table:
             return Response('Missing required parameters (service, url, table)', status=400)
+    
+        if save_attachments == "true" and not bucket:
+            return Response('Missing required parameter (bucket) for saving attachments', status=400)
 
         command = ['python3', 'lib/agol_to_pg.py', service_name, url, table, '--schema', schema, '--batch', batch]
         if source_epsg:
@@ -97,6 +106,9 @@ def run_pg_script():
             command += ['--target_epsg', target_epsg]
         if oid:
             command += ['--oid', oid]
+        if save_attachments:
+            command += ['--save_attachments', save_attachments]        
+            command += ['--bucket', bucket]
 
         print(f"Running command: {' '.join(command)}")  # Debug print
 

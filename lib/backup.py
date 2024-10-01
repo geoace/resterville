@@ -19,17 +19,9 @@ import datetime as dt
 import argparse
 import logging
 from arcgis.gis import GIS
-from google.cloud import storage
-from google.auth import default
-from google.auth.exceptions import DefaultCredentialsError
-from google.oauth2 import service_account
-import google.auth
-import json
-import requests
 import time
-from google.auth.exceptions import DefaultCredentialsError
 import re
-from google.api_core.exceptions import Forbidden, NotFound
+from gcp import get_gcs_bucket
 
 # Configure logging for this script
 logging.basicConfig(
@@ -54,38 +46,6 @@ DEFAULT_TIMEOUT = (10, 3600)  # 30-minute read timeout
 def sanitize_name(name):
     """Replace all special characters in a name with underscores."""
     return re.sub(r'[^A-Za-z0-9_]', '_', name)
-
-def get_gcs_bucket(bucket_name):
-    """Initialize GCS client and get bucket reference based on the environment."""
-    logging.basicConfig(level=logging.INFO)
-    credentials = None
-
-    try:
-        credentials, project = default()
-        logging.info(f"Default credentials loaded successfully for project: {project}.")
-    except DefaultCredentialsError as e:
-        logging.error("No credentials provided and default auth failed: %s", e)
-        raise
-
-    try:
-        # Initialize the Google Cloud Storage client
-        client = storage.Client(credentials=credentials)
-        logging.info("Google Cloud Storage client initialized successfully.")
-        
-        bucket = client.bucket(bucket_name)
-        logging.info(f"Bucket reference for '{bucket_name}' obtained successfully.")
-        
-        # Check if the bucket exists and has appropriate permissions
-        if not bucket.exists():
-            logging.error(f"Bucket '{bucket_name}' does not exist.")
-            raise Exception(f"Bucket '{bucket_name}' does not exist.")
-        else:
-            logging.info(f"Bucket '{bucket_name}' exists and is accessible.")
-    except Exception as e:
-        logging.error("An unexpected error occurred: %s", e, exc_info=True)
-        raise
-
-    return bucket
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Backup GIS items and manage archives.')

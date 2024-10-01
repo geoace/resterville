@@ -16,14 +16,14 @@
 
 # You can contact the developer via email or using the contact form provided at https://geoace.net
 
+import logging
 import psycopg2
 from psycopg2 import sql
-import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-def truncate_or_delete_table(table_name, service_name, schema='public'):
+def truncate_or_delete_table(table_name, service_name, schema='public', cascade: bool = False):
     """
     Truncates the specified table in the PostgreSQL database using a service definition.
     If truncating fails (e.g., due to foreign key constraints), delete all rows instead.
@@ -40,9 +40,10 @@ def truncate_or_delete_table(table_name, service_name, schema='public'):
         cur = conn.cursor()
 
         # Construct the TRUNCATE SQL query
-        query = sql.SQL("TRUNCATE TABLE {}.{}").format(
+        query = sql.SQL("TRUNCATE TABLE {}.{}{}").format(
             sql.Identifier(schema),
-            sql.Identifier(table_name)
+            sql.Identifier(table_name),
+            sql.SQL(" CASCADE" if cascade else sql.SQL(""))
         )
 
         # Execute the truncate operation
