@@ -205,7 +205,7 @@ def download_features(conn: connect, table_name: str, schema: str, service_name:
         print(f"Table exists: {table_exists}")
 
         if table_exists:
-            truncate_or_delete_table(table_name, service_name, schema)
+            truncate_or_delete_table(table_name, service_name, schema, True)
         else:
             print(f"Table {schema}.{table_name} does not exist.")
             # Optionally, create the table dynamically here if necessary
