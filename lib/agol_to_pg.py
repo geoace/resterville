@@ -287,8 +287,8 @@ def download_attachments(conn: connect, table_name: str, schema: str, service_na
     try:
         cur = conn.cursor()
         parent_table = f"{schema}.{table_name}"
-        attachment_table = f"{schema}.{table_name}_ATTACH"
-        temp_table = f"_{table_name}_ATTACH"
+        attachment_table = f"{schema}.{table_name}_attach"
+        temp_table = f"_{table_name}_attach"
 
         table_check_query = sql.SQL("SELECT to_regclass(%s)")
         cur.execute(table_check_query, [attachment_table])
@@ -436,7 +436,7 @@ def transfer_attachments(conn: connect, table_name: str, schema: str, bucket_nam
     """
     try:
         cur = conn.cursor()
-        attachment_table = f"{schema}.{table_name}_ATTACH"
+        attachment_table = f"{schema}.{table_name}_attach"
 
         table_check_query = sql.SQL("SELECT to_regclass(%s)")
         cur.execute(table_check_query, [attachment_table])
