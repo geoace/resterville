@@ -408,7 +408,7 @@ def download_attachments(conn: connect, table_name: str, schema: str, service_na
 
 def _download_file_bytes(url: str) -> bytes:
     try:
-        response = requests.get(url)
+        response = requests.get(url, params={'token': _get_token()})
         return BytesIO(response.content)
     except requests.exceptions.RequestException as e:
         print("Error downloading the file:", e)
