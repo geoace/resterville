@@ -464,7 +464,7 @@ def transfer_attachments(conn: connect, table_name: str, schema: str, bucket_nam
                     file_name = row[2]
                     url = row[3]
 
-                    content = _download_file_bytes(url)
+                    content = _download_file_bytes(url, , params={'token': _get_token()})
                     target = f'{table_name}/{attachmentid}/{file_name}'
 
                     _upload_file_bytes(content, bucket, target)
