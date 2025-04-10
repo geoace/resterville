@@ -99,7 +99,7 @@ def run_pg_script():
         if save_attachments == "true" and not bucket:
             return Response('Missing required parameter (bucket) for saving attachments', status=400)
 
-        command = ['python3', 'lib/agol_to_pg.py', service_name, url, table, '--schema', schema, '--batch', batch]
+        command = ['/venv/bin/python', 'lib/agol_to_pg.py', service_name, url, table, '--schema', schema, '--batch', batch]
         if source_epsg:
             command += ['--source_epsg', source_epsg]
         if target_epsg:
