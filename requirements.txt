@@ -6,3 +6,4 @@ dask[dataframe]
 requests
 google-cloud-storage
 pyproj
+pillow>=10.3.0 
