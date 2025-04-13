@@ -19,47 +19,53 @@ Once we complete feature testing, we'll make the repository publicly accessible 
 `docker build -t resterville .`
 
 #### Run the container, adding in postgresql connection strings (shown here as environment variables) and credentials (shown here as volumes) as needed
+```shell
 docker run -d -p 8080:8080 --env-file ./env/.env \
 -e PG_CONNECTION="dbname='my_db' user='viewer' host='localhost' port='5432' password='super!secret';dbname='my_db2' user='superuser_1' host='localhost' port='5432' password='superb!secret'" \
 -v /home/linux_user/resterville/env/credentials.json:/app/env/credentials.json \
 resterville
-
+```
 
 # GETTING STARTED FROM THE CLOUD (GCP example; Video tutorial coming as funding allows)
 ## SET UP INSTRUCTIONS
 Create a Project...
 
 #### Bucket
-Step 1. Go to cloud storage
-Step 2. Name, region preference, etc. (I generally just add a name like "agol_backups" and keep defaults)
-Step 3. Do NOT enforce public access prevention (gives option to share things publicly as desired)
+1. Go to cloud storage
+2. Name, region preference, etc. (I generally just add a name like "agol_backups" and keep defaults)
+3. Do NOT enforce public access prevention (gives option to share things publicly as desired)
 
 #### Set up Bucket Administrator Service Account
-Step 4. Go to IAM & Admin
-Step 5. Service Accounts > Create Service Account
-Step 6. Service Account Name: bucket-admin
-Step 7. Assign roles to bucket-admin service account: Storage Admin, Storage Folder Admin, Storage Object Admin, Storage Object Viewer
-Step 8. Click on service account > keys > add key > json (downloads to your computer)
+4. Go to IAM & Admin
+5. Service Accounts > Create Service Account
+6. Service Account Name: bucket-admin
+7. Assign roles to bucket-admin service account: Storage Admin, Storage Folder Admin, Storage Object Admin, Storage Object Viewer
+8. Click on service account > keys > add key > json (downloads to your computer)
 
 #### Load key into GCP secret manager
-Step 9. If needed, add API
-Step 10. Create secret (give it a name)
-Step 11. Upload recently-created json file (see step 5 above)
-Step 12. Create Secret
+9. If needed, add API
+10. Create secret (give it a name)
+11. Upload recently-created json file (see step 5 above)
+12. Create Secret
 
 #### Artifact Registry
-Step 13. Activate cloud shell and run the following commands (change region and project name as appropriate)
-`docker pull geoace/resterville:latest`
-`docker tag geoace/resterville:latest REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville:latest`
-`docker push REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville`
-
+13. Activate cloud shell and run the following commands (change region and project name as appropriate)
+```shell
+docker pull geoace/resterville:latest
+docker tag geoace/resterville:latest REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville:latest
+docker push REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville
+```
 #### Cloud Run
-Step 14. Create Service
-Step 15. Select "Artifact Registry" radio button
-Step 16. Press the "Select" button and navigate to your newly-pushed container in the docker registry
-Step 17. Fill out region, authentication, allocation, etc. NOTE: We recommend at least 4 GB memory and 2 CPUs (scale up if moving very large data volumes)
-Step 18. Variables should be filled out according to what tools you plan on using. For ArcGIS workflows, ensure ARCGIS_CLIENT_ID, ARCGIS_PORTAL_URL, ARCGIS_CLIENT_SECRET, ARCGIS_PASSWORD, and ARCGIS_USER are set (if ARCGIS_PORTAL_URL is left blank, it will default to arcgis.com). If using postgresql, then fill out PG_CONNECTION information (see documentation for format). If backing up to a GCP Bucket, then ensure GOOGLE_APPLICATION_CREDENTIALS are mounted to app/secrets (see photos). When using the BUCKET variable on setup, all Bucket-related workflows will default to the provided bucket when the optional parameter is not provided. API-KEY will be the passcode required to request workflows from the server, so keep it safe! We recommend storing all sensitive information in secret manager. 
-Step 19. Deploy and visit the GCP-provided HTTPS URL. If you see the RESTerville logo, you're good to go!
+14. Create Service
+15. Select "Artifact Registry" radio button
+16. Press the "Select" button and navigate to your newly-pushed container in the docker registry
+17. Fill out region, authentication, allocation, etc. NOTE: We recommend at least 4 GB memory and 2 CPUs (scale up if moving very large data volumes)
+18. Variables should be filled out according to what tools you plan on using. 
+    - For ArcGIS workflows, ensure ARCGIS_CLIENT_ID, ARCGIS_PORTAL_URL, ARCGIS_CLIENT_SECRET, ARCGIS_PASSWORD, and ARCGIS_USER are set (if ARCGIS_PORTAL_URL is left blank, it will default to arcgis.com). 
+    - If using postgresql, then fill out PG_CONNECTION information (see documentation for format). - - If backing up to a GCP Bucket, then ensure GOOGLE_APPLICATION_CREDENTIALS are mounted to app/secrets (see photos). 
+    - When using the BUCKET variable on setup, all Bucket-related workflows will default to the provided bucket when the optional parameter is not provided. 
+    - API-KEY will be the passcode required to request workflows from the server, so keep it safe! We recommend storing all sensitive information in secret manager. 
+19. Deploy and visit the GCP-provided HTTPS URL. If you see the RESTerville logo, you're good to go!
 
 # Function Usage
 See API Documentation at https://resterville.org/docs.php#
