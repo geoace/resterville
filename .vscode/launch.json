@@ -13,7 +13,7 @@
             "env": {
                 "FLASK_APP": "app.py",
                 "FLASK_DEBUG": "1",
-                "PGSERVICEFILE": "${workspaceFolder}/env/pg_service.conf",
+                "PGSERVICEFILE": "${workspaceFolder}/testing/pg_service.conf",
                 "GOOGLE_APPLICATION_CREDENTIALS": "${workspaceFolder}/env/credentials.json",
             },
             "envFile": "${workspaceFolder}/env/.env",

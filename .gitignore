@@ -5,3 +5,5 @@
 /env/.env_local
 README_dev.md
 env/credentials.json
+testing/data/
+__pycache__/
