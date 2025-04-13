@@ -16,14 +16,16 @@
 
 # You can contact the developer via email or using the contact form provided at https://geoace.net
 
-from flask import Flask, render_template, request, Response, jsonify, stream_with_context
-import subprocess
+import json
 import logging
 import os
+import subprocess
 import sys
-import json
-from json import dumps
 import traceback
+from json import dumps
+
+from flask import (Flask, Response, jsonify, render_template, request,
+                   stream_with_context)
 
 # Configure logging to output to stdout immediately
 logging.basicConfig(

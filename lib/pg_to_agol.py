@@ -8,15 +8,15 @@ This file uses the ArcGIS API for Python, which is licensed under the Apache Lic
 See https://github.com/Esri/arcgis-python-api/blob/master/LICENSE for more information.
 
 """
-import psycopg2
-import requests
-import json
 import argparse
+import json
 import os
 from datetime import datetime
+
+import psycopg2
+import requests
+from arcgis.features import FeatureLayer, FeatureLayerCollection
 from arcgis.gis import GIS
-from arcgis.features import FeatureLayer
-from arcgis.features import FeatureLayerCollection
 
 client_id = os.getenv('ARCGIS_CLIENT_ID')
 client_secret = os.getenv('ARCGIS_CLIENT_SECRET')

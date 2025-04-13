@@ -16,10 +16,12 @@
 
 # You can contact the developer via email or using the contact form provided at https://geoace.net
 
-import sys
 import os
+import sys
 import traceback
-from psycopg2 import sql, connect
+
+from psycopg2 import connect, sql
+
 
 # Set the PGSERVICEFILE environment variable to point to your PostgreSQL service file
 def setup_environment():

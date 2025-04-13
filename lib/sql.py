@@ -17,6 +17,7 @@
 # You can contact the developer via email or using the contact form provided at https://geoace.net
 
 import logging
+
 import psycopg2
 from psycopg2 import sql
 

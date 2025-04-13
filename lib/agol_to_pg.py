@@ -16,23 +16,24 @@
 
 # You can contact the developer via email or using the contact form provided at https://geoace.net
 
-from typing import Union
-import json
 import argparse
-import tempfile
-import os
-import traceback
-import subprocess
+import json
 import logging
+import os
+import subprocess
+import tempfile
+import traceback
 from io import BytesIO
+from typing import Union
+
 import requests
-from psycopg2 import sql, connect
-from psycopg2.extras import execute_values
+from arcgis.gis import GIS
 from esri_to_geojson import esri_to_geojson
-from sql import truncate_or_delete_table
 from gcp import get_gcs_bucket
 from google.cloud.storage import Bucket
-from arcgis.gis import GIS
+from psycopg2 import connect, sql
+from psycopg2.extras import execute_values
+from sql import truncate_or_delete_table
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

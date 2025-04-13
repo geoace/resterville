@@ -13,14 +13,15 @@
 # Attribution:
 # This file uses code or data provided by Google, available at https://cloud.google.com/python/docs/reference.
 
-import os
-import sys
-import datetime as dt
 import argparse
+import datetime as dt
 import logging
-from arcgis.gis import GIS
-import time
+import os
 import re
+import sys
+import time
+
+from arcgis.gis import GIS
 from gcp import get_gcs_bucket
 
 # Configure logging for this script

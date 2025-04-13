@@ -16,9 +16,10 @@
 
 # You can contact the developer via email or using the contact form provided at https://geoace.net
 
-import re
 import json
 import logging
+import re
+
 
 def get_pg_services(pg_service_conf_path="/app/env/pg_service.conf"):
     """Retrieve the PostgreSQL service names from the pg_service.conf file."""
