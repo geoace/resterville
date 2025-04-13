@@ -1,12 +1,13 @@
-@ -0,0 +1,11 @@
 {
-    "editor.formatOnSaveMode": "modificationsIfAvailable",
-    "editor.formatOnSave": false,
-    "[python]": {
-        "diffEditor.ignoreTrimWhitespace": true,
-        "editor.defaultColorDecorators": "never",
-        "editor.formatOnType": true,
-        "editor.wordBasedSuggestions": "off",
-        "editor.formatOnSave": false
-    }
+    "python.analysis.typeCheckingMode": "standard",
+    "editor.quickSuggestionsDelay": 10,
+    "editor.quickSuggestions": {
+        "other": true,
+        "comments": false,
+        "strings": false
+    },
+    "pylint.args": [
+        "--disable=missing-timeout",
+        "--disable=broad-exception-caught",
+    ]
 }

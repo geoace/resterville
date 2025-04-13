@@ -22,7 +22,8 @@ import sys
 import time
 
 from arcgis.gis import GIS
-from gcp import get_gcs_bucket
+
+from lib.gcp import get_gcs_bucket
 
 # Configure logging for this script
 logging.basicConfig(
@@ -32,10 +33,13 @@ logging.basicConfig(
 )
 
 # Apply the flush handler to ensure immediate output
+
+
 class FlushHandler(logging.StreamHandler):
     def emit(self, record):
         super().emit(record)
         self.flush()
+
 
 logging.getLogger().handlers = [FlushHandler(sys.stdout)]
 
@@ -44,33 +48,45 @@ MAX_UPLOAD_RETRIES = 3
 RETRY_DELAY_SECONDS = 5
 DEFAULT_TIMEOUT = (10, 3600)  # 30-minute read timeout
 
+
 def sanitize_name(name):
     """Replace all special characters in a name with underscores."""
     return re.sub(r'[^A-Za-z0-9_]', '_', name)
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description='Backup GIS items and manage archives.')
-    parser.add_argument('--max_items', type=int, help='Maximum number of items to process', default=100)
-    parser.add_argument('--duration', type=int, help='Duration in days to keep stored backup files', required=False)
-    parser.add_argument('--remove_archives', choices=['yes', 'no'], default='no', help='Whether to remove old archives (yes/no)')
-    parser.add_argument('--bucket_name', required=True, help='Name of the Google Cloud Storage bucket')
-    parser.add_argument('--usernames', required=True, help='Comma-separated list of usernames to back up')
+    parser = argparse.ArgumentParser(
+        description='Backup GIS items and manage archives.')
+    parser.add_argument('--max_items', type=int,
+                        help='Maximum number of items to process', default=100)
+    parser.add_argument('--duration', type=int,
+                        help='Duration in days to keep stored backup files', required=False)
+    parser.add_argument('--remove_archives', choices=[
+                        'yes', 'no'], default='no', help='Whether to remove old archives (yes/no)')
+    parser.add_argument('--bucket_name', required=True,
+                        help='Name of the Google Cloud Storage bucket')
+    parser.add_argument('--usernames', required=True,
+                        help='Comma-separated list of usernames to back up')
     return parser.parse_args()
+
 
 def upload_with_retry(blob, local_path, retries=MAX_UPLOAD_RETRIES):
     """Upload a file to Google Cloud Storage with retries."""
     for attempt in range(1, retries + 1):
         try:
-            blob.upload_from_filename(local_path, timeout=DEFAULT_TIMEOUT[1])  # Use the read timeout
+            blob.upload_from_filename(
+                local_path, timeout=DEFAULT_TIMEOUT[1])  # Use the read timeout
             logging.info(f"Successfully uploaded {blob.name}")
             return True
         except Exception as e:
-            logging.error(f"Attempt {attempt}/{retries} failed with error: {e}", exc_info=True)
+            logging.error(
+                f"Attempt {attempt}/{retries} failed with error: {e}", exc_info=True)
             if attempt < retries:
                 time.sleep(RETRY_DELAY_SECONDS)
             else:
                 logging.error(f"Upload failed after {retries} attempts.")
                 return False
+
 
 def list_existing_files(bucket):
     """List all the files in the bucket and store them in a dictionary for easy lookup."""
@@ -90,6 +106,7 @@ def list_existing_files(bucket):
 
     return existing_files
 
+
 def get_last_modified_date(bucket, base_name):
     """Get the last modified date from the file name in the bucket."""
     blobs = bucket.list_blobs()
@@ -105,9 +122,11 @@ def get_last_modified_date(bucket, base_name):
                 if not latest_date or file_date > latest_date:
                     latest_date = file_date
             except ValueError:
-                logging.error(f"Error parsing date from filename {filename}", exc_info=True)
+                logging.error(
+                    f"Error parsing date from filename {filename}", exc_info=True)
 
     return latest_date
+
 
 def download_as_fgdb(item_list, bucket, max_items):
     today_date = dt.datetime.now().strftime("%d_%b_%Y")
@@ -119,7 +138,8 @@ def download_as_fgdb(item_list, bucket, max_items):
 
     for count, item in enumerate(item_list):
         if count >= max_items:
-            logging.info(f"Reached the maximum limit of {max_items} items to process.")
+            logging.info(
+                f"Reached the maximum limit of {max_items} items to process.")
             break
 
         sanitized_name = sanitize_name(item.title)
@@ -133,13 +153,15 @@ def download_as_fgdb(item_list, bucket, max_items):
 
         # Skip the item if it hasn't been modified since the last backup
         if last_backup_date and item_modified_date <= last_backup_date:
-            logging.info(f"Skipping {item.title}, not modified since last backup.")
+            logging.info(
+                f"Skipping {item.title}, not modified since last backup.")
             skipped_files.append(item.title)
             continue
 
         try:
             logging.info(f"Downloading {item.title}")
-            result = item.export(f"{sanitized_name}_{today_date}", "File Geodatabase")
+            result = item.export(
+                f"{sanitized_name}_{today_date}", "File Geodatabase")
             local_path = result.download()
 
             blob = bucket.blob(f"{base_name}.gdb.zip")
@@ -152,11 +174,13 @@ def download_as_fgdb(item_list, bucket, max_items):
                 skipped_files.append(item.title)
 
         except Exception as e:
-            logging.error(f"An error occurred downloading {item.title}: {e}", exc_info=True)
+            logging.error(
+                f"An error occurred downloading {item.title}: {e}", exc_info=True)
             skipped_files.append(item.title)
 
     logging.info("The function has completed")
     return added_files, skipped_files
+
 
 def delete_old_archives(bucket, duration, added_files):
     now = dt.datetime.now()
@@ -184,14 +208,18 @@ def delete_old_archives(bucket, duration, added_files):
                 blob.delete()
                 logging.info(f"Deleted old archive: {filename}")
             else:
-                logging.info(f"Kept archive {filename}: Either most recent or does not meet cutoff date.")
+                logging.info(
+                    f"Kept archive {filename}: Either most recent or does not meet cutoff date.")
         except ValueError as e:
-            logging.error(f"Error parsing date from filename {filename}: {e}", exc_info=True)
+            logging.error(
+                f"Error parsing date from filename {filename}: {e}", exc_info=True)
+
 
 def main():
     args = parse_args()
     if args.remove_archives == 'yes' and args.duration is None:
-        logging.error("Duration must be specified if remove_archives is set to 'yes'")
+        logging.error(
+            "Duration must be specified if remove_archives is set to 'yes'")
         sys.exit(1)
 
     bucket = get_gcs_bucket(args.bucket_name)
@@ -217,13 +245,17 @@ def main():
             )
             items.extend(user_items)
         except Exception as e:
-            logging.error(f"An error occurred while searching for items owned by {username}: {e}", exc_info=True)
+            logging.error(
+                f"An error occurred while searching for items owned by {username}: {e}", exc_info=True)
 
     # Perform the download and backup operations
-    added_files, skipped_files = download_as_fgdb(items, bucket, args.max_items)
+    added_files, skipped_files = download_as_fgdb(
+        items, bucket, args.max_items)
 
     if args.remove_archives == 'yes':
-        delete_old_archives(bucket, args.duration, [sanitize_name(item) for item in added_files])
+        delete_old_archives(bucket, args.duration, [
+                            sanitize_name(item) for item in added_files])
+
 
 if __name__ == "__main__":
     try:

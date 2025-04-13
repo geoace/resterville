@@ -1,46 +1,79 @@
-# This file is part of RESTerville, a Workflow Automation toolkit.
-# Copyright (C) 2024  GEOACE
+"""
+This file is part of RESTerville, a Workflow Automation toolkit.
+Copyright (C) 2024  GEOACE
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# You can contact the developer via email or using the contact form provided at https://geoace.net
-
-import argparse
+You can contact the developer via email or using the contact form provided at https://geoace.net
+"""
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import traceback
-from io import BytesIO
-from typing import Union
+from types import SimpleNamespace
+from typing import Any, Generator, Union
 
 import requests
 from arcgis.gis import GIS
-from esri_to_geojson import esri_to_geojson
-from gcp import get_gcs_bucket
+from flask import Blueprint, Response, abort, request, stream_with_context
 from google.cloud.storage import Bucket
 from psycopg2 import connect, sql
 from psycopg2.extras import execute_values
-from sql import truncate_or_delete_table
+
+from lib.esri_to_geojson import esri_to_geojson
+from lib.gcp import get_gcs_bucket
+from lib.sql import truncate_or_delete_table
+
+agol_to_pg = Blueprint('agol_to_pg', __name__)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def setup_environment(path: str = None) -> None:
+
+def setup_environment(path: Union[str, None] = None) -> None:
     """Set up the environment for PostgreSQL connection."""
-    os.environ['PGSERVICEFILE'] = '/app/env/pg_service.conf' if path is None else path
+    if 'PGSERVICEFILE' not in os.environ:
+        os.environ['PGSERVICEFILE'] = '/app/env/pg_service.conf' if path is None else path
+
+
+def debug(msg: Any) -> str:
+    """Log a debug message and return it."""
+    logger.debug(msg)
+    if logger.getEffectiveLevel() <= logging.DEBUG:
+        return f"\n{msg}"
+    return "."
+
+
+def info(msg: Any) -> str:
+    """Log an info message and return it."""
+    logger.info(msg)
+    if logger.getEffectiveLevel() <= logging.INFO:
+        return f"\n{msg}"
+    return "."
+
+
+def error(msg: Any) -> str:
+    """Log an error message and return it."""
+    logger.error(msg)
+    if logger.getEffectiveLevel() <= logging.ERROR:
+        return f"\n{msg}"
+    return "."
+
 
 def _get_token() -> str:
     portal_url = os.getenv('ARCGIS_PORTAL_URL')
@@ -50,7 +83,8 @@ def _get_token() -> str:
 
     return gis.session.auth.token
 
-def fetch_data(url: str, start: int, count: int) -> Union[dict, None]:
+
+def _fetch_data(url: str, start: int, count: int) -> Union[dict, None]:
     """Fetch data from the ArcGIS REST API.
 
     Args:
@@ -69,14 +103,16 @@ def fetch_data(url: str, start: int, count: int) -> Union[dict, None]:
         'resultRecordCount': count,
         'token': _get_token()
     }
-    response = requests.get(url, params=params)
+    response = requests.get(
+        url, params=params)
     if response.status_code == 200:
         return response.json()
     else:
-        print("Failed to fetch data:", response.text)
+        abort(400, f"Failed to fetch_data from {url}. {response.text}")
         return None
 
-def fetch_attachment_data(url: str, start: int, count: int) -> Union[dict, None]:
+
+def _fetch_attachment_data(url: str, start: int, count: int) -> Union[dict, None]:
     """Fetch attachment data from the ArcGIS REST API.
 
     Args:
@@ -95,24 +131,27 @@ def fetch_attachment_data(url: str, start: int, count: int) -> Union[dict, None]
         'resultRecordCount': count,
         'token': _get_token()
     }
-    response = requests.get(f'{url}/queryAttachments', params=params)
+    response = requests.get(f'{url}/queryAttachments',
+                            params=params)  # pylint: disable=missing-timeout
     if response.status_code == 200:
         return response.json()
     else:
-        print("Failed to fetch data:", response.text)
+        logger.info("Failed to fetch: %s", response.text)
         return None
 
-def fetch_source_epsg(api_url: str) -> Union[str, None]:
+
+def _fetch_source_epsg(url: str) -> Union[int, None]:
     """Fetch the source EPSG code from the metadata of the ArcGIS REST API.
 
     Args:
-        api_url (str): The URL of the ArcGIS REST API.
+        url (str): The URL of the ArcGIS REST API.
 
     Returns:
         Union[str, None]: The source EPSG code if found, otherwise None.
     """
-    metadata_url = f"{api_url}?f=json"
-    response = requests.get(metadata_url, params={'token': _get_token()})
+    metadata_url = f"{url}?f=json"
+    response = requests.get(metadata_url, params={
+                            'token': _get_token()})  # pylint: disable=missing-timeout
 
     if response.status_code == 200:
         metadata = response.json()
@@ -123,26 +162,58 @@ def fetch_source_epsg(api_url: str) -> Union[str, None]:
         elif "wkid" in spatial_ref:
             return spatial_ref["wkid"]
         else:
-            print("Spatial reference not found in the metadata.")
+            logger.info("Spatial reference not found in the metadata.")
             return None
     else:
-        print(f"Failed to fetch metadata from {metadata_url}: {response.text}")
+        logger.info(
+            "Failed to fetch metadata from %s: %s", metadata_url, response.text)
         return None
 
-def run_ogr2ogr(geojson_file_path: str, service: str, schema: str, table_name: str, geometry_name: str, oid: str, source_epsg: int, target_epsg: int):
+
+def _check_oid(url: str, oid: str) -> Union[int, None]:
+    """Fetch the source EPSG code from the metadata of the ArcGIS REST API.
+
+    Args:
+        url (str): The URL of the ArcGIS REST API.
+
+    Returns:
+        Union[str, None]: The source EPSG code if found, otherwise None.
+    """
+    metadata_url = f"{url}?f=json"
+    response = requests.get(metadata_url, params={
+                            'token': _get_token()})  # pylint: disable=missing-timeout
+
+    if response.status_code == 200:
+        metadata = response.json()
+        fields = metadata.get("fields", {})
+
+        for field in fields:
+            if field['name'].lower() == oid.lower():
+                abort(400,
+                      description=f"Field {oid} already exists in the service.  Define a unique field to be used for the OID.")
+
+
+def _run_ogr2ogr(geojson_file_path: str,
+                 service: str,
+                 schema: str,
+                 table: str,
+                 geometry_name: str,
+                 oid: str,
+                 source_epsg: int,
+                 target_epsg: int):
     """Run the ogr2ogr command to import GeoJSON data into PostgreSQL.
 
     Args:
         geojson_file_path (str)
         service (str)
         schema (str)
-        table_name (str)
+        table (str)
         geometry_name (str)
         oid (str)
         source_epsg (int)
         target_epsg (int)
     """
-    with open(geojson_file_path, 'r') as geojson_file:
+    with open(geojson_file_path, 'r') as geojson_file:  # pylint: disable=unspecified-encoding
         geojson_data = json.load(geojson_file)
         if geojson_data["features"]:
             geom_type = geojson_data["features"][0]["geometry"]["type"]
@@ -163,7 +234,7 @@ def run_ogr2ogr(geojson_file_path: str, service: str, schema: str, table_name: s
             else:
                 geom_nlt = geom_nlt_mapping.get(geom_type, "PROMOTE_TO_MULTI")
         else:
-            print("No features found in the provided GeoJSON file.")
+            logger.info("No features found in the provided GeoJSON file.")
             return
 
     command = [
@@ -177,28 +248,66 @@ def run_ogr2ogr(geojson_file_path: str, service: str, schema: str, table_name: s
         '-append',
         '-lco', 'GEOMETRY_NAME=' + geometry_name,
         '-lco', 'FID=' + oid,
-        '-nln', schema + '.' + table_name,
+        '-nln', schema + '.' + table,
         '-a_srs', f'EPSG:{source_epsg}',
         '-nlt', geom_nlt
     ]
     if target_epsg:
         command += ['-t_srs', f'EPSG:{target_epsg}']
 
-    process = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if process.returncode != 0:
-        print("ogr2ogr command failed:", process.stderr)
-    else:
-        print("ogr2ogr command was successful")
+    process = subprocess.run(
+        command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 
-def download_features(conn: connect, table_name: str, schema: str, service_name: str, api_url: str, geometry_name: str, oid: str, source_epsg: int, target_epsg: int, batch_size: int) -> None:
-    """Download features from the ArcGIS REST API and import them into PostgreSQL.
+    if process.returncode != 0:
+        logger.info("ogr2ogr command failed: %s", process.stderr)
+    else:
+        logger.info("ogr2ogr command was successful")
+
+
+def _stream_to_gcs(url: str, bucket: Bucket, target_file_path: str):
+    """Stream data from a URL to a Google Cloud Storage bucket."""
+    try:
+        blob = bucket.blob(target_file_path)
+
+        response = requests.get(
+            url, params={'token': _get_token()}, stream=True)
+        response.raise_for_status()
+
+        with blob.open("wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        logging.info(
+            "Successfully streamed data from %s to gs://%s/%s", url, bucket.name, target_file_path)
+
+    except requests.exceptions.RequestException as e:
+        logging.info(
+            "Error occurred while fetching data from %s in stream_to_gcs: %s", url, e)
+        raise e
+    except Exception as e:
+        logging.info("An error occurred in stream_to_gcs: %s", e)
+        raise e
+
+
+def download_features(
+        conn,
+        table: str,
+        schema: str,
+        service_name: str,
+        url: str,
+        geometry_name: str,
+        oid: str,
+        source_epsg: int,
+        target_epsg: int,
+        batch_size: int) -> Generator[str, None, None]:
+    """Download feature records from the ArcGIS REST API and import them into PostgreSQL.
 
     Args:
         conn (connect): Database connection.
-        table_name (str): Name of the table to import data into.
+        table (str): Name of the table to import data into.
         schema (str):  Database schema for the table.
         service_name (str): PostgreSQL service name.
-        api_url (str): URL of the ArcGIS REST API.
+        url (str): URL of the ArcGIS REST API.
         geometry_name (str): Name of the geometry column.
         oid (str): Name of the object ID column.
         source_epsg (int): Source EPSG code for spatial reference.
@@ -209,140 +318,117 @@ def download_features(conn: connect, table_name: str, schema: str, service_name:
         e: An error occurred during download_features
     """
     try:
-        cur = conn.cursor()
-        table_full_name = f"{schema}.{table_name}"
-        table_check_query = sql.SQL("SELECT to_regclass(%s)")
-        cur.execute(table_check_query, [table_full_name])
-        table_exists = cur.fetchone()[0]
-        print(f"Table exists: {table_exists}")
+        yield info("Starting download feature records")
+        with conn.cursor() as cur:
+            table_full_name = f"{schema}.{table}"
+            table_check_query = sql.SQL("SELECT to_regclass(%s)")
+            cur.execute(table_check_query, [table_full_name])
+            table_exists = cur.fetchone()[0]
+            yield from debug(f"Table exists: {table_exists}")
 
-        if table_exists:
-            truncate_or_delete_table(table_name, service_name, schema, True)
-        else:
-            print(f"Table {schema}.{table_name} does not exist.")
-            # Optionally, create the table dynamically here if necessary
-
-        cur.close()
+            if table_exists:
+                truncate_or_delete_table(
+                    table, service_name, schema, True, reset_sequence=True)
+            else:
+                yield from debug(f"Table {schema}.{table} does not exist.")
+                # Optionally, create the table dynamically here if necessary
 
         start = 0
         total_imported = 0
 
         while True:
-            esri_json = fetch_data(api_url + '/query', start, batch_size)
+            esri_json = _fetch_data(url + '/query', start, batch_size)
             if not esri_json or 'features' not in esri_json or not esri_json['features']:
-                print("No more data or fetch failed.")
+                yield from debug("No more data or fetch failed.")
                 break
 
-            print(f"Processing batch from offset {start}, size {batch_size}. Features in batch: {len(esri_json['features'])}")
+            yield from info(f"Processing batch from offset {start}, size {batch_size}.")
+            yield from info(f"Features in batch: {len(esri_json['features'])}")
 
             geojson = esri_to_geojson(esri_json)
             geojson_str = json.dumps(geojson)
 
             tempdir = './tmp'
             os.makedirs(tempdir, exist_ok=True)
-            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.geojson', dir=tempdir) as tmp_file:
+            with tempfile.NamedTemporaryFile(
+                    mode='w+',
+                    delete=False,
+                    suffix='.geojson',
+                    dir=tempdir) as tmp_file:
+
                 tmp_file.write(geojson_str)
                 tmp_file_path = tmp_file.name
 
-            run_ogr2ogr(tmp_file_path, service_name, schema, table_name,
-                        geometry_name, oid, source_epsg, target_epsg)
+            _run_ogr2ogr(tmp_file_path, service_name, schema, table,
+                         geometry_name, oid, source_epsg, target_epsg)
 
             os.remove(tmp_file_path)
 
             processed_features = len(geojson['features'])
             total_imported += processed_features
 
-            print(f"Processed {processed_features} features in current batch. Total processed: {total_imported}")
+            yield from debug(f"Processed {processed_features} features in current batch.")
+            yield from debug(f"Total processed: {total_imported}")
 
             start += processed_features
 
             if processed_features < batch_size:
-                print("Last batch processed, terminating loop.")
+                logger.debug("Last batch processed, terminating loop.")
                 break
 
-        print(f"Total features imported: {total_imported}")
+        yield from info("Finished download feature recordss")
+        yield from info(f"Total features imported: {total_imported}")
 
     except Exception as e:
-        print(f"An error occurred during download_features: {e}")
-        print(traceback.format_exc())
+        yield from error(f"An error occurred during download_features: {e}")
         raise e
 
-def download_attachments(conn: connect, table_name: str, schema: str, service_name: str, api_url: str, oid: str, batch_size: int) -> None:
-    """Download features attachments from the ArcGIS REST API and import them into PostgreSQL.
+
+def download_attachments(
+        conn,
+        table: str,
+        schema: str,
+        service_name: str,
+        url: str, oid: str,
+        batch_size: int) -> Generator[str, None, None]:
+    """Download attachment records from the ArcGIS REST API and import them into PostgreSQL.
 
     Args:
         conn (connect): Database connection.
-        table_name (str): Name of the parent table for features.
+        table (str): Name of the parent table for features.
         schema (str):  Database schema for the parent table.
         service_name (str): PostgreSQL service name.
-        api_url (str): URL of the ArcGIS REST API.
+        url (str): URL of the ArcGIS REST API.
         geometry_name (str): Name of the geometry column.
-        oid (str): Name of the object ID column.
-        source_epsg (int): Source EPSG code for spatial reference.
-        target_epsg (int): Target EPSG code for spatial reference transformation.
         batch_size (int): Number of records to fetch in each batch.
 
     Raises:
         e: An error occurred during download_features
     """
     try:
-        cur = conn.cursor()
-        parent_table = f"{schema}.{table_name}"
-        attachment_table = f"{schema}.{table_name}_attach"
-        temp_table = f"_{table_name}_attach"
+        yield from info("Starting download attachment records")
 
-        table_check_query = sql.SQL("SELECT to_regclass(%s)")
-        cur.execute(table_check_query, [attachment_table])
-        table_exists = cur.fetchone()[0]
-        print(f"Table exists: {table_exists}")
+        with conn.cursor() as cur:
+            parent_table = f"{schema}.{table}"
+            attachment_table = f"{schema}.{table}_attach"
+            temp_table = f"_{table}_attach"
 
-        if table_exists:
-            truncate_or_delete_table(attachment_table[len(schema)+1:], service_name, schema)
-        else:
-            print(f"Table {attachment_table} does not exist.")
+            table_check_query = sql.SQL("SELECT to_regclass(%s)")
+            cur.execute(table_check_query, [attachment_table])
+            table_exists = cur.fetchone()[0]
+            yield from debug(f"Table exists: {table_exists}")
 
-            # Optionally, create the table dynamically here if necessary
-            create_table = f"""
-            CREATE TABLE {attachment_table} (
-                OBJECTID BIGSERIAL PRIMARY KEY,
-                PARENTID BIGINT references {parent_table}({oid}),
-                ATTACHMENTID BIGINT,
-                PARENT_OID BIGINT,
-                PARENT_GLOBALID VARCHAR(255),
-                NAME VARCHAR(255),
-                SIZE BIGINT,
-                CONTENT_TYPE VARCHAR(255),
-                EXIF_INFO JSONB,
-                KEYWORDS VARCHAR(255),
-                URL VARCHAR(2083)
-            );
-            """
-            cur.execute(create_table)
+            if table_exists:
+                truncate_or_delete_table(
+                    attachment_table[len(schema)+1:], service_name, schema, reset_sequence=True)
+            else:
+                yield from debug(f"Table {attachment_table} does not exist.")
 
-        start = 0
-        total_imported = 0
-
-        while True:
-            esri_json = fetch_attachment_data(api_url, start, batch_size)
-            if not esri_json or 'attachmentGroups' not in esri_json or not esri_json['attachmentGroups']:
-                print("No more data or fetch failed.")
-                break
-
-            groups = esri_json['attachmentGroups']
-            print(f"Processing batch from offset {start}, size {batch_size}. Features in batch: {len(groups)}")
-
-            records = []
-            for group in groups:
-                print(group)
-                parent_oid = group['parentObjectId']
-                parent_globalid = group['parentGlobalId']
-                for attachment in group['attachmentInfos']:
-                    records.append((attachment['id'], parent_oid, parent_globalid, attachment['name'], attachment['size'], attachment['contentType'], json.dumps(attachment['exifInfo']), attachment['keywords'], attachment['url']))
-
-            print(records)
-            if len(records) > 0:
+                # Optionally, create the table dynamically here if necessary
                 create_table = f"""
-                CREATE TEMP TABLE {temp_table} (
+                CREATE TABLE {attachment_table} (
+                    OBJECTID BIGSERIAL PRIMARY KEY,
+                    PARENTID BIGINT references {parent_table}({oid}),
                     ATTACHMENTID BIGINT,
                     PARENT_OID BIGINT,
                     PARENT_GLOBALID VARCHAR(255),
@@ -356,221 +442,313 @@ def download_attachments(conn: connect, table_name: str, schema: str, service_na
                 """
                 cur.execute(create_table)
 
-                execute_values(cur,
-                    f"INSERT INTO {temp_table} (attachmentid, parent_oid, parent_globalid, name, size, content_type, exif_info, keywords, url) VALUES %s",
-                    records)
+            start = 0
+            total_imported = 0
 
-                update_table = f"""
-                INSERT INTO {attachment_table}(
-                    parentid,
-                    attachmentid,
-                    parent_oid,
-                    parent_globalid,
-                    name,
-                    size,
-                    content_type,
-                    exif_info,
-                    keywords,
-                    url)
-                SELECT 
-                    (SELECT {oid} FROM {parent_table} WHERE {oid} = parent_oid) parentid, 
-                    attachmentid,
-                    parent_oid,
-                    parent_globalid,
-                    name,
-                    size,
-                    content_type,
-                    exif_info,
-                    keywords,
-                    url
-                From {temp_table}
-                """
-                cur.execute(update_table)
+            while True:
+                esri_json = _fetch_attachment_data(url, start, batch_size)
+                if not esri_json \
+                        or 'attachmentGroups' not in esri_json \
+                        or not esri_json['attachmentGroups']:
+                    yield from debug("No more data or fetch failed.")
+                    break
 
-            processed_features = len(records)
-            total_imported += processed_features
+                groups = esri_json['attachmentGroups']
+                yield from info(f"Processing batch from offset {start}, size {batch_size}.")
+                yield from info(f"Features in batch: {len(groups)}")
 
-            print(f"Processed {processed_features} features in current batch. Total processed: {total_imported}")
+                records = []
+                for group in groups:
+                    parent_oid = group['parentObjectId']
+                    parent_globalid = group['parentGlobalId']
+                    for attachment in group['attachmentInfos']:
+                        records.append((attachment['id'],
+                                        parent_oid,
+                                        parent_globalid,
+                                        attachment['name'],
+                                        attachment['size'],
+                                        attachment['contentType'],
+                                        json.dumps(attachment['exifInfo']),
+                                        attachment['keywords'],
+                                        attachment['url']))
 
-            start += processed_features
+                if len(records) > 0:
+                    create_table = f"""
+                    CREATE TEMP TABLE IF NOT EXISTS {temp_table} (
+                        ATTACHMENTID BIGINT,
+                        PARENT_OID BIGINT,
+                        PARENT_GLOBALID VARCHAR(255),
+                        NAME VARCHAR(255),
+                        SIZE BIGINT,
+                        CONTENT_TYPE VARCHAR(255),
+                        EXIF_INFO JSONB,
+                        KEYWORDS VARCHAR(255),
+                        URL VARCHAR(2083)
+                    );
+                    """
+                    cur.execute(create_table)
 
-            if processed_features < batch_size:
-                print("Last batch processed, terminating loop.")
-                break
+                    execute_values(cur,
+                                   f"""INSERT INTO {temp_table} (
+                                        attachmentid, 
+                                        parent_oid, 
+                                        parent_globalid, 
+                                        name, 
+                                        size, 
+                                        content_type, 
+                                        exif_info, 
+                                        keywords, 
+                                        url) VALUES %s""",
+                                   records)
 
-        print(f"Total features imported: {total_imported}")
+                    update_table = f"""
+                    INSERT INTO {attachment_table}(
+                        parentid,
+                        attachmentid,
+                        parent_oid,
+                        parent_globalid,
+                        name,
+                        size,
+                        content_type,
+                        exif_info,
+                        keywords,
+                        url)
+                    SELECT
+                        (SELECT {oid} 
+                            FROM {parent_table} 
+                            WHERE {oid} = parent_oid) parentid,
+                        attachmentid,
+                        parent_oid,
+                        parent_globalid,
+                        name,
+                        size,
+                        content_type,
+                        exif_info,
+                        keywords,
+                        url
+                    From {temp_table}
+                    """
+                    cur.execute(update_table)
+
+                processed_features = len(records)
+                total_imported += processed_features
+
+                yield from debug(f"Processed {processed_features} features in current batch.")
+                yield from debug(f"Total processed: {total_imported}")
+
+                start += processed_features
+
+                if processed_features < batch_size:
+                    yield from debug("Last batch processed, terminating loop.")
+                    break
+
+        yield from info("Finished download attachment records")
+        yield from info(f"Total features imported: {total_imported}")
 
     except Exception as e:
-        print(f"An error occurred during download_attachments: {e}")
-        print(traceback.format_exc())
+        yield from error(f"An error occurred during download_attachments: {e}")
         raise e
-    finally:
-        cur.close()
 
-def _download_file_bytes(url: str) -> bytes:
-    try:
-        response = requests.get(url, params={'token': _get_token()})
-        return BytesIO(response.content)
-    except requests.exceptions.RequestException as e:
-        print("Error downloading the file:", e)
 
-def _upload_file_bytes(content: bytes, bucket: Bucket, target_file_path: str):
-    blob = bucket.blob(target_file_path)
-    blob.upload_from_file(content)
-
-    print(
-        f"File uploaded to {target_file_path}."
-    )
-
-def transfer_attachments(conn: connect, table_name: str, schema: str, bucket_name: str):
-    """_summary_
+def transfer_attachments(
+        conn,
+        table: str,
+        schema: str,
+        bucket_name: str) -> Generator[str, None, None]:
+    """Use attachment records from PostgreSQL to download attachments and stream them to a GCP bucket.
 
     Args:
-        conn (connect): Database connect.  
-        table_name (str): Name of the parent table for attachments
+        conn (connect): Database connect.
+        table (str): Name of the parent table for attachments
         schema (str): Schema for the parent table
         bucket_name (str): Name of the GCP bucket
 
-    Raises:
-        e: An error occurred during transfering attachments
-        e: An error occurred getting bucket and database table
     """
     try:
-        cur = conn.cursor()
-        attachment_table = f"{schema}.{table_name}_attach"
+        yield from info("Starting transfer attachments")
+        record_count = 0
 
-        table_check_query = sql.SQL("SELECT to_regclass(%s)")
-        cur.execute(table_check_query, [attachment_table])
-        table_exists = cur.fetchone()[0]
-        print(f"Table exists: {table_exists}")
+        with conn.cursor() as cur, conn.cursor() as update_cur:
+            attachment_table = f"{schema}.{table}_attach"
 
-        bucket = get_gcs_bucket(bucket_name)
-        blobs_to_delete = [blob.name for blob in bucket.list_blobs(prefix=table_name)]
-        bucket.delete_blobs(blobs_to_delete)
+            table_check_query = sql.SQL("SELECT to_regclass(%s)")
+            cur.execute(table_check_query, [attachment_table])
+            table_exists = cur.fetchone()[0]
+            yield from debug(f"Attachment Table exists: {table_exists}")
 
-        if table_exists:
-            cur = conn.cursor()
-            update_cur = conn.cursor()
+            bucket = get_gcs_bucket(bucket_name)
+            yield from debug(
+                f"Connected to bucket: {bucket_name}")
 
-            # Execute a SELECT query
-            cur.execute(f"SELECT objectid, attachmentid, name, url FROM {attachment_table}")
+            blobs = {blob.name: blob for blob in bucket.list_blobs(
+                prefix=table)}
 
-            record_count = 0
-            try:
-                row = cur.fetchone()
-                while row is not None:
-                    record_count += 1
-                    objectid = row[0]
-                    attachmentid = row[1]
-                    file_name = row[2]
-                    url = row[3]
+            yield from debug(
+                f"Found {len(blobs)} {table} attachments in {bucket_name}")
 
-                    content = _download_file_bytes(url)
-                    target = f'{table_name}/{attachmentid}/{file_name}'
+            if table_exists:
+                # Execute a SELECT query
+                cur.execute(
+                    f"SELECT objectid, attachmentid, name, url FROM {attachment_table}")
 
-                    _upload_file_bytes(content, bucket, target)
-
-                    # Execute a UPDATE query
-                    update_cur.execute(f"UPDATE {attachment_table} SET url = 'https://storage.cloud.google.com/{bucket_name}/{target}' WHERE objectid = {objectid}")
-                    conn.commit()
-
+                try:
                     row = cur.fetchone()
+                    while row is not None:
+                        record_count += 1
+                        objectid = row[0]
+                        attachmentid = row[1]
+                        file_name, extension = os.path.splitext(row[2])
+                        file_name = re.sub(
+                            r'[^a-zA-Z0-9]', '_', file_name) + extension
+                        url = row[3]
 
-                cur.close()
-            except Exception as e:
-                print(f"An error occurred during transfering attachments: {e}")
-                print(traceback.format_exc())
-                raise e
-            finally:
-                update_cur.close()
+                        target = f'{table}/{attachmentid}{extension}'
 
-            print(f"Total attachments transferred: {record_count}")
+                        blob = blobs.pop(target, None)
+                        if not blob:
+                            _stream_to_gcs(url, bucket, target)
+                            yield from debug(
+                                f"Transferred {file_name} to {target}")
+                        else:
+                            yield from debug(
+                                f"Attachments {target} already exists in bucket {bucket_name}")
+
+                        # Execute a UPDATE query
+                        update_cur.execute(
+                            f"""
+                        UPDATE {attachment_table}
+                        SET url = 'https://storage.cloud.google.com/{bucket_name}/{target}',
+                            name = '{file_name}'
+                        WHERE objectid = {objectid}""")
+                        conn.commit()
+
+                        row = cur.fetchone()
+                except Exception as e:
+                    yield from error(
+                        f"An error occurred during transfering attachments: {e}")
+                    yield from error(traceback.format_exc())
+                    raise e
+
+                for blob in blobs.values():
+                    blob.delete()
+                    yield from debug(f"Deleted attachments: {blob.name}")
+
+        yield from info(
+            f"Finished transferring attachments to {bucket_name}")
+        yield from info(
+            f"Total attachments transferred: {record_count}")
+        yield from info(f"Deleted {len(blobs)} attachments from bucket {bucket_name}")
 
     except Exception as e:
-        print(f"An error occurred getting bucket and database table: {e}")
-        print(traceback.format_exc())
+        yield from error(
+            f"An error occurred getting bucket and database table: {e}")
         raise e
-    finally:
-        cur.close()
 
-def main():
-    parser = argparse.ArgumentParser(description='Process and import GeoJSON into PostgreSQL.')
-    parser.add_argument('service_name', help='PostgreSQL service name')
-    parser.add_argument('api_url', help='API URL to fetch data from')
-    parser.add_argument('table_name', help='Table name to process data into')
-    parser.add_argument('--schema', default='public', help='Database schema (default: public)')
-    parser.add_argument('--geometry_name', default='geom', help='Geometry column name (default: geom)')
-    parser.add_argument('--oid', default='OBJECTID', help='Feature ID field name (default: OBJECTID)')
-    parser.add_argument('--source_epsg', type=int, help='Source EPSG code for spatial reference override')
-    parser.add_argument('--target_epsg', type=int, help='Target EPSG code for spatial reference transformation')
-    parser.add_argument('--batch', type=int, default=1000, help='Batch size for data fetching (default: 1000)')
-    parser.add_argument('--save_attachments', type=bool, default=False, help='Save attachments to bucket (default: False)')
-    parser.add_argument('--PGSERVICEFILE', type=str, default=None, help='PGSERVICEFILE (default: False)')
-    parser.add_argument('--bucket_name', type=str, default=None, help='GCP Bucket name (Required if save-attachments is true)')
 
-    args = parser.parse_args()
-    print(f"Parsed arguments: {args}")
+def parse_args() -> SimpleNamespace:
+    """Parse command line arguments or request parameters."""
 
-    setup_environment(args.PGSERVICEFILE)
-    print("Environment setup complete")
+    args = request.args if request.method == 'GET' else request.form
 
-    try:
-        conn = connect(f"service={args.service_name}")
-        conn.autocommit = True
-        print(f"Connected to database using service: {args.service_name}")
-    except Exception as e:
-        print(f"Failed to connect to the database: {e}")
-        return
+    retval = SimpleNamespace()
 
-    if args.source_epsg:
-        source_epsg = args.source_epsg
+    retval.loglevel = args.get('loglevel', 'info')
+    retval.service_name = args.get('service')
+    retval.url = args.get('url')
+    retval.table = args.get('table')
+    retval.oid = args.get('oid', 'agol_to_pg_oid')
+
+    retval.schema = args.get('schema', 'public')
+    retval.geometry_name = args.get('geometry_name', 'geom')
+    # Fetch 'batch' parameter, default to '1000'
+    retval.batch = int(args.get('batch', '1000'))
+    # Default to 'false'
+    retval.save_attachments = bool(json.dumps(
+        args.get('save_attachments', "false")))
+    retval.bucket_name = args.get('bucket', os.getenv(
+        'BUCKET'))
+
+    if not retval.service_name or not retval.url or not retval.table or not retval.oid:
+        abort(400, 'Missing required parameters (service, url, table, oid)')
+
+    _check_oid(retval.url, retval.oid)
+
+    if retval.save_attachments == "true" and not retval.bucket_name:
+        abort(400, 'Missing required parameter (bucket) for saving attachments')
+
+    retval.source_epsg = args.get('source_epsg', None)
+    retval.target_epsg = args.get('target_epsg', None)
+
+    if retval.source_epsg:
+        retval.source_epsg = int(retval.source_epsg)
     else:
-        source_epsg = fetch_source_epsg(args.api_url)
-        if source_epsg is None:
-            print("Unable to determine source EPSG code. Exiting.")
-            return
+        retval.source_epsg = _fetch_source_epsg(retval.url)
+        if retval.source_epsg is None:
+            abort(400, "Unable to determine source EPSG code. Exiting.")
 
+    if retval.target_epsg:
+        retval.target_epsg = int(retval.target_epsg)
+
+    return retval
+
+
+@agol_to_pg.route('/agol2pg', methods=['GET', 'POST'])
+def run_pg_script():
+    """ Run the AGOL to PostgreSQL script. """
     try:
-        download_features(
-            conn,
-            args.table_name,
-            args.schema,
-            args.service_name,
-            args.api_url,
-            args.geometry_name,
-            args.oid,
-            source_epsg,
-            args.target_epsg,
-            args.batch)
+        args = parse_args()
+        if args.loglevel == 'debug':
+            logger.setLevel(logging.DEBUG)
 
-        if not args.save_attachments:
-            print("Not saving attachments")
-        else:
-            print(f"Saving attachments to {args.bucket_name}")
+        def generator():
+            try:
+                logging.info("Starting AGOL to PostgreSQL script")
+                yield "Starting AGOL to PostgreSQL script"
+                yield from debug(args)
 
-            download_attachments(conn,
-                args.table_name,
-                args.schema,
-                args.service_name,
-                args.api_url,
-                args.oid,
-                args.batch)
+                setup_environment()
+                yield from debug("Environment setup complete")
 
-            transfer_attachments(conn,
-                args.table_name,
-                args.schema,
-                args.bucket_name)
+                with connect(f"service={args.service_name}") as conn:
+                    conn.autocommit = True
+                    yield from debug(f"Connected to database using service: {args.service_name}")
 
+                    for line in download_features(
+                            conn, args.table,
+                            args.schema,
+                            args.service_name,
+                            args.url,
+                            args.geometry_name,
+                            args.oid,
+                            args.source_epsg,
+                            args.target_epsg,
+                            args.batch):
+                        yield line
+
+                    for line in download_attachments(
+                            conn,
+                            args.table,
+                            args.schema,
+                            args.service_name,
+                            args.url,
+                            args.oid,
+                            args.batch):
+                        yield line
+
+                    for line in transfer_attachments(conn,
+                                                     args.table,
+                                                     args.schema,
+                                                     args.bucket_name):
+                        yield line
+
+                yield from info("Finished AGOL to PostgreSQL script")
+
+            except Exception as e:
+                yield from error(f"An error occurred: {e}")
+                yield from error(traceback.format_exc())
+
+        return Response(stream_with_context(generator()), mimetype='text/event-stream')
     except Exception as e:
-        print(f"An error occurred during processing: {e}")
-        print(traceback.format_exc())
-
-    finally:
-        try:
-            conn.close()
-            print("Database connection closed")
-        except Exception as e:
-            print(f"Failed to close database connection: {e}")
-
-if __name__ == "__main__":
-    main()
+        logger.error("An error occurred: %s", e)
+        logger.error(traceback.format_exc())
+        abort(500, f"An internal error occurred: {str(e)}")
