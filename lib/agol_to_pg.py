@@ -170,14 +170,14 @@ def _fetch_source_epsg(url: str) -> Union[int, None]:
         return None
 
 
-def _fetch_geometry_type(url: str) -> Union[int, None]:
-    """Fetch the source EPSG code from the metadata of the ArcGIS REST API.
+def _fetch_geometry_type(url: str) -> Union[str, None]:
+    """Fetch the geometry type from the metadata of the ArcGIS REST API.
 
     Args:
         url (str): The URL of the ArcGIS REST API.
 
     Returns:
-        Union[str, None]: The source EPSG code if found, otherwise None.
+        Union[str, None]: The geometry type if found, otherwise None.
     """
     metadata_url = f"{url}?f=json"
     response = requests.get(metadata_url, params={
