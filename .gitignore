@@ -7,3 +7,5 @@ README_dev.md
 env/credentials.json
 testing/data/
 __pycache__/
+.venv/
+tmp/
