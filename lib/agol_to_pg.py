@@ -175,7 +175,6 @@ def _fetch_geometry_type(url: str) -> Union[str, None]:
 
     Args:
         url (str): The URL of the ArcGIS REST API.
-
     Returns:
         Union[str, None]: The geometry type if found, otherwise None.
     """
@@ -189,7 +188,7 @@ def _fetch_geometry_type(url: str) -> Union[str, None]:
 
     else:
         logger.info(
-            "Failed to fetch has geometry from %s: %s", metadata_url, response.text)
+            "Failed to fetch geometry type from %s: %s", metadata_url, response.text)
         return None
 
 
