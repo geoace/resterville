@@ -747,7 +747,7 @@ def run_pg_script():
                     conn.autocommit = True
                     yield from debug(f"Connected to database using service: {args.service_name}")
 
-                    if not args.source_epsg:
+                    if args.has_geometry and not args.source_epsg:
                         yield from info("WARNING: No source_epsg was provided and it could not be discovered from the services metadata.")
 
                     for line in download_features(
