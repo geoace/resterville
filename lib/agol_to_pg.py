@@ -275,10 +275,11 @@ def _run_ogr2ogr(geojson_file_path: str,
                 geom_nlt = geom_nlt_mapping.get(geom_type, "PROMOTE_TO_MULTI")
 
             command += ['-lco', f'GEOMETRY_NAME={geometry_name}']
-            command += ['-a_srs', f'EPSG:{source_epsg}']
             command += ['-lco', 'GEOMETRY_TYPE=geometry']
             command += ['-lco', 'DIM=2']
 
+            if source_epsg:
+                command += ['-a_srs', f'EPSG:{source_epsg}']
             if target_epsg:
                 command += ['-t_srs', f'EPSG:{target_epsg}']
 
@@ -328,6 +329,7 @@ def download_features(
         url: str,
         oid: str,
         batch_size: int,
+        has_geometry: bool,
         geometry_name: Union[str, None] = None,
         source_epsg: Union[int, None] = None,
         target_epsg: Union[int, None] = None) -> Generator[str, None, None]:
@@ -339,6 +341,7 @@ def download_features(
         schema (str):  Database schema for the table.
         service_name (str): PostgreSQL service name.
         url (str): URL of the ArcGIS REST API.
+        has_geometry (bool): Indicates if the data has geometry.
         geometry_name (str): Name of the geometry column.
         oid (str): Name of the object ID column.
         source_epsg (int): Source EPSG code for spatial reference.
@@ -377,7 +380,7 @@ def download_features(
             yield from info(f"Features in batch: {len(esri_json['features'])}")
 
             geojson = esri_to_geojson(
-                esri_json, has_geometry=geometry_name is not None)
+                esri_json, has_geometry=has_geometry)
             geojson_str = json.dumps(geojson)
 
             tempdir = './tmp'
@@ -391,8 +394,11 @@ def download_features(
                 tmp_file.write(geojson_str)
                 tmp_file_path = tmp_file.name
 
-            _run_ogr2ogr(tmp_file_path, service_name, schema, table,
-                         oid, geometry_name, source_epsg, target_epsg)
+            if has_geometry:
+                _run_ogr2ogr(tmp_file_path, service_name, schema, table,
+                             oid, geometry_name, source_epsg, target_epsg)
+            else:
+                _run_ogr2ogr(tmp_file_path, service_name, schema, table, oid)
 
             os.remove(tmp_file_path)
 
@@ -704,28 +710,18 @@ def parse_args() -> SimpleNamespace:
     if retval.save_attachments == "true" and not retval.bucket_name:
         abort(400, 'Missing required parameter (bucket) for saving attachments')
 
-    retval.geometry_name = None
-    retval.source_epsg = None
-    retval.target_epsg = None
+    retval.geometry_name = args.get('geometry_name', None)
+    retval.source_epsg = args.get('source_epsg', None)
+    retval.target_epsg = args.get('target_epsg', None)
+    retval.has_geometry = _fetch_geometry_type(retval.url)
 
-    if _fetch_geometry_type(retval.url):
-        retval.geometry_name = args.get('geometry_name', None)
-        retval.source_epsg = args.get('source_epsg', None)
-        retval.target_epsg = args.get('target_epsg', None)
+    if retval.source_epsg:
+        retval.source_epsg = int(retval.source_epsg)
+    elif retval.has_geometry:
+        retval.source_epsg = _fetch_source_epsg(retval.url)
 
-        if not retval.geometry_name:
-            abort(
-                400, 'Feature Service has geometry so (geometry_name) field is required')
-
-        if retval.source_epsg:
-            retval.source_epsg = int(retval.source_epsg)
-        else:
-            retval.source_epsg = _fetch_source_epsg(retval.url)
-            if retval.source_epsg is None:
-                abort(400, "Unable to determine source EPSG code. Exiting.")
-
-        if retval.target_epsg:
-            retval.target_epsg = int(retval.target_epsg)
+    if retval.target_epsg:
+        retval.target_epsg = int(retval.target_epsg)
 
     return retval
 
@@ -750,6 +746,7 @@ def run_pg_script():
                 with connect(f"service={args.service_name}") as conn:
                     conn.autocommit = True
                     yield from debug(f"Connected to database using service: {args.service_name}")
+                    yield from info("WARNING: No source_epsg was provided and it could not be discovered from the services metadata.")
 
                     for line in download_features(
                             conn=conn,
@@ -759,6 +756,7 @@ def run_pg_script():
                             url=args.url,
                             oid=args.oid,
                             batch_size=args.batch,
+                            has_geometry=args.has_geometry,
                             geometry_name=args.geometry_name,
                             source_epsg=args.source_epsg,
                             target_epsg=args.target_epsg):
