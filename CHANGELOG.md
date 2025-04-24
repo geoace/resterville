@@ -1,6 +1,6 @@
 # Changelog
 
-## - 2025-04-23
+## - 2025-04-24
 
 ### agol_to_pg
 - Removed geometry_name as required when calling a feature service with geometry

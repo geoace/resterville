@@ -746,7 +746,9 @@ def run_pg_script():
                 with connect(f"service={args.service_name}") as conn:
                     conn.autocommit = True
                     yield from debug(f"Connected to database using service: {args.service_name}")
-                    yield from info("WARNING: No source_epsg was provided and it could not be discovered from the services metadata.")
+
+                    if not args.source_epsg:
+                        yield from info("WARNING: No source_epsg was provided and it could not be discovered from the services metadata.")
 
                     for line in download_features(
                             conn=conn,
