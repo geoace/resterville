@@ -1,5 +1,11 @@
 # Changelog
 
+## - 2025-04-24
+
+### agol_to_pg
+- Removed geometry_name as required when calling a feature service with geometry
+- Updated no source_epsg from abort 400 to a warning message
+
 ## - 2025-04-23
 
 ### agol_to_pg
