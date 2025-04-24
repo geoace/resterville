@@ -713,7 +713,7 @@ def parse_args() -> SimpleNamespace:
     retval.geometry_name = args.get('geometry_name', None)
     retval.source_epsg = args.get('source_epsg', None)
     retval.target_epsg = args.get('target_epsg', None)
-    retval.has_geometry = _fetch_geometry_type(retval.url)
+    retval.has_geometry = bool(_fetch_geometry_type(retval.url))
 
     if retval.source_epsg:
         retval.source_epsg = int(retval.source_epsg)
