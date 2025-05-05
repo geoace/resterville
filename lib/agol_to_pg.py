@@ -578,7 +578,7 @@ def download_attachments(
                     else:
                         parent_field = identifiers.get(
                             'globalIdField') if 'globalIdField' in identifiers else identifiers.get('objectIdField')
-                        parent_lookup = 'parent_globalid' if 'globalIdField' in identifiers else 'parent_oid'
+                        parent_lookup = 'parent_globalid' if 'parent_globalid' in identifiers else 'parent_oid'
 
                         update_table = f"""
                         INSERT INTO {attachment_table}(
