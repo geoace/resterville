@@ -813,11 +813,14 @@ def run_pg_script():
                             args.batch):
                         yield line
 
-                    for line in transfer_attachments(conn,
-                                                     args.table,
-                                                     args.schema,
-                                                     args.bucket_name):
-                        yield line
+                    try:
+                        for line in transfer_attachments(conn,
+                                                         args.table,
+                                                         args.schema,
+                                                         args.bucket_name):
+                            yield line
+                    except Exception as e:
+                        yield from error(e)
 
                 yield from info("Finished AGOL to PostgreSQL script")
 
