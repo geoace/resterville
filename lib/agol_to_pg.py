@@ -192,6 +192,36 @@ def _fetch_geometry_type(url: str) -> Union[str, None]:
         return None
 
 
+def _fetch_metadata(url: str, fields: Union[list[str], None] = None) -> Union[dict[str, Any], None]:
+    """Fetch the fields from the metadata of the ArcGIS REST API.
+
+    Args:
+        url (str): The URL of the ArcGIS REST API.
+    Returns:
+        Union[str, None]: The geometry type if found, otherwise None.
+    """
+    metadata_url = f"{url}?f=json"
+    response = requests.get(metadata_url, params={
+                            'token': _get_token()})  # pylint: disable=missing-timeout
+
+    if response.status_code == 200:
+        metadata = response.json()
+
+        retval = {}
+        if fields and len(fields) > 0:
+            for field in fields:
+                retval[field] = metadata.get(field, None)
+        else:
+            retval = metadata
+
+        return retval
+
+    else:
+        logger.info(
+            "Failed to fetch metadata from %s: %s", metadata_url, response.text)
+        return None
+
+
 def _check_oid(url: str, oid: str) -> Union[int, None]:
     """Fetch the source EPSG code from the metadata of the ArcGIS REST API.
 
@@ -539,34 +569,43 @@ def download_attachments(
                                         url) VALUES %s""",
                                    records)
 
-                    update_table = f"""
-                    INSERT INTO {attachment_table}(
-                        parentid,
-                        attachmentid,
-                        parent_oid,
-                        parent_globalid,
-                        name,
-                        size,
-                        content_type,
-                        exif_info,
-                        keywords,
-                        url)
-                    SELECT
-                        (SELECT {oid} 
-                            FROM {parent_table} 
-                            WHERE {oid} = parent_oid) parentid,
-                        attachmentid,
-                        parent_oid,
-                        parent_globalid,
-                        name,
-                        size,
-                        content_type,
-                        exif_info,
-                        keywords,
-                        url
-                    From {temp_table}
-                    """
-                    cur.execute(update_table)
+                    identifiers = _fetch_metadata(
+                        url, ['globalIdField', 'objectIdField'])
+                    if not identifiers or len(identifiers) < 1:
+                        yield from error("Unable to get globalIdField or objectIdField from feature service")
+                    else:
+                        parent_field = identifiers.get(
+                            'globalIdField') if 'globalIdField' in identifiers else identifiers.get('objectIdField')
+                        parent_lookup = 'parent_globalid' if 'globalIdField' in identifiers else 'parent_oid'
+
+                        update_table = f"""
+                        INSERT INTO {attachment_table}(
+                            parentid,
+                            attachmentid,
+                            parent_oid,
+                            parent_globalid,
+                            name,
+                            size,
+                            content_type,
+                            exif_info,
+                            keywords,
+                            url)
+                        SELECT
+                            (SELECT {oid} 
+                                FROM {parent_table} 
+                                WHERE {parent_field} = {parent_lookup}) parentid,
+                            attachmentid,
+                            parent_oid,
+                            parent_globalid,
+                            name,
+                            size,
+                            content_type,
+                            exif_info,
+                            keywords,
+                            url
+                        From {temp_table}
+                        """
+                        cur.execute(update_table)
 
                 processed_features = len(records)
                 total_imported += processed_features
