@@ -193,14 +193,12 @@ def _fetch_geometry_type(url: str) -> Union[str, None]:
 
 
 def _fetch_metadata(url: str, fields: Union[list[str], None] = None) -> Union[dict[str, Any], None]:
-    """Fetch the specified fields from the metadata of the ArcGIS REST API.
+    """Fetch the fields from the metadata of the ArcGIS REST API.
 
     Args:
         url (str): The URL of the ArcGIS REST API.
-        fields (Union[list[str], None], optional): A list of metadata fields to fetch. If None, the entire metadata is returned.
-
     Returns:
-        Union[dict[str, Any], None]: A dictionary containing the requested metadata fields (or the entire metadata if no fields are specified), or None if the request fails.
+        Union[str, None]: The geometry type if found, otherwise None.
     """
     metadata_url = f"{url}?f=json"
     response = requests.get(metadata_url, params={
@@ -578,7 +576,7 @@ def download_attachments(
                     else:
                         parent_field = identifiers.get(
                             'globalIdField') if 'globalIdField' in identifiers else identifiers.get('objectIdField')
-                        parent_lookup = 'parent_globalid' if 'parent_globalid' in identifiers else 'parent_oid'
+                        parent_lookup = 'parent_globalid' if 'globalIdField' in identifiers else 'parent_oid'
 
                         update_table = f"""
                         INSERT INTO {attachment_table}(
