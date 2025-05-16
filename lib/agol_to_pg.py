@@ -409,6 +409,7 @@ def download_features(
             yield from info(f"Processing batch from offset {start}, size {batch_size}.")
             yield from info(f"Features in batch: {len(esri_json['features'])}")
 
+            logger.debug(json.dumps(esri_json['features'][0], indent=2))
             geojson = esri_to_geojson(
                 esri_json, has_geometry=has_geometry)
             geojson_str = json.dumps(geojson)
