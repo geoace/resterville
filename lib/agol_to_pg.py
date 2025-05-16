@@ -695,7 +695,7 @@ def transfer_attachments(
                         update_cur.execute(
                             f"""
                         UPDATE {attachment_table}
-                        SET url = 'https://storage.cloud.google.com/{bucket_name}/{target}',
+                        SET url = 'https://storage.googleapis.com/{bucket_name}/{target}',
                             name = '{file_name}'
                         WHERE objectid = {objectid}""")
                         conn.commit()
