@@ -1,7 +1,79 @@
 env/.env
-env/cop-city-of-pataskala-0fb1ab9c974f.json
+
 env/pg_service.conf
-env/resterville-422818-125f5ca74254.json
+
 env/.env_local
 README_dev.md
 .vscode/
+
+############################
+# ENV + SECRETS
+############################
+.env
+.env.*
+*.env
+env/*
+!env/.template
+
+*.json
+!package.json
+!poetry.lock
+
+pg_service.conf
+*.pem
+*.key
+*.crt
+
+############################
+# PYTHON
+############################
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+############################
+# VENV
+############################
+.venv/
+venv/
+
+############################
+# LOCAL DEV
+############################
+tmp/
+temp/
+logs/
+*.log
+
+############################
+# TEST DATA
+############################
+testing/
+*.geojson
+*.gpkg
+*.sqlite
+*.csv
+
+############################
+# GIT
+############################
+.git
+.gitignore
+
+############################
+# IDE
+############################
+.vscode/
+.idea/
+
+############################
+# OS
+############################
+.DS_Store
+Thumbs.db
+
+############################
+# DOCKER LOCAL ONLY
+############################
+docker-compose.override.yml
