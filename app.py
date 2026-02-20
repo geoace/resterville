@@ -195,49 +195,51 @@ def backup():
 @app.route('/pg_function', methods=['GET', 'POST'])
 def pg_function():
     try:
-        # Fetch parameters based on the request method
         if request.method == 'GET':
-            # Default service if not provided
-            service_name = request.args.get('service', 'default_service')
+            service_name  = request.args.get('service', 'default_service')
             function_name = request.args.get('function')
-            # Default schema if not provided
-            schema = request.args.get('schema', 'public')
-        elif request.method == 'POST':
-            # Default service if not provided
-            service_name = request.form.get('service', 'default_service')
+            schema        = request.args.get('schema', 'public')
+        else:
+            service_name  = request.form.get('service', 'default_service')
             function_name = request.form.get('function')
-            # Default schema if not provided
-            schema = request.form.get('schema', 'public')
+            schema        = request.form.get('schema', 'public')
 
-        # Ensure the required function_name parameter is provided
         if not function_name:
             return Response("Function parameter is required", status=400)
 
-        # Call the external script and pass the service name, function name, and schema
-        command = ['python3', 'lib/pg_function.py',
-                   service_name, function_name, schema]
-
-        print(f"Running command: {' '.join(command)}")  # Debug print
+        command = ["python3", "-u", "lib/pg_function.py", service_name, function_name, schema]
+        print(f"Running command: {' '.join(command)}", flush=True)
 
         def generate():
+            # Merge stderr into stdout so we don't deadlock reading two pipes
             process = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            )
 
-            while True:
-                output = process.stdout.readline()
-                if output:
-                    yield f"data:{output}\n\n"
-                err = process.stderr.readline()
-                if err:
-                    yield f"data:{err}\n\n"
-                if output == '' and process.poll() is not None:
+            # Stream line-by-line
+            for line in iter(process.stdout.readline, ''):
+                if not line:
                     break
+                # 1) send to client
+                yield f"data:{line.rstrip()}\n\n"
+                # 2) ALSO print to server logs so you see it in docker logs
+                print(f"[pg_function] {line.rstrip()}", flush=True)
+
+            rc = process.wait()
+            yield f"data:__EXIT_CODE__={rc}\n\n"
+            print(f"[pg_function] exit code={rc}", flush=True)
 
         return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
     except Exception as e:
-        print(f"An error occurred: {e}")
-        print(traceback.format_exc())
+        print(f"An error occurred: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
         return Response(f"An internal error occurred: {str(e)}", status=500)
 
 

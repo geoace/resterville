@@ -29,18 +29,22 @@ def setup_environment():
 
 def run_function(service_name, function_name, schema):
     """ Connects to the PostgreSQL database and runs the specified SQL function. """
-    print(f"Connecting to PostgreSQL service: {service_name}")
+    print(f"Connecting to PostgreSQL service: {service_name}", flush=True)
+    print("Connected", flush=True)
     try:
         conn = connect(service=service_name)
         print("Connected")
         cursor = conn.cursor()
         try:
             # Set the search path to the specified schema
-            cursor.execute(sql.SQL('SET search_path TO {schema}').format(schema=sql.Identifier(schema)))
+            cursor.execute(
+                sql.SQL("SET search_path TO {schema}, public")
+                .format(schema=sql.Identifier(schema))
+            )
             # Call the specified function
             cursor.execute(sql.SQL('SELECT {function}()').format(function=sql.Identifier(function_name)))
             conn.commit()
-            print(f"Function {function_name} executed successfully in schema {schema}")
+            print(f"Function {function_name} executed successfully in schema {schema}", flush=True)
         except Exception as e:
             conn.rollback()
             print(f"Failed to execute function: {str(e)}", file=sys.stderr)
@@ -50,8 +54,8 @@ def run_function(service_name, function_name, schema):
             cursor.close()
             conn.close()
     except Exception as e:
-        print(f"Failed to connect to PostgreSQL service: {str(e)}", file=sys.stderr)
-        print(traceback.format_exc(), file=sys.stderr)
+        print(f"Failed to execute function: {str(e)}", file=sys.stderr, flush=True)
+        print(traceback.format_exc(), file=sys.stderr, flush=True)
         sys.exit(1)
 
 if __name__ == '__main__':
