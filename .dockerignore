@@ -77,3 +77,10 @@ Thumbs.db
 # DOCKER LOCAL ONLY
 ############################
 docker-compose.override.yml
+
+############################
+# BUILD OUTPUTS
+############################
+*.zip
+*.patch
+tests/

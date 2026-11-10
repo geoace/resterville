@@ -25,15 +25,14 @@ from psycopg2 import connect, sql
 
 # Set the PGSERVICEFILE environment variable to point to your PostgreSQL service file
 def setup_environment():
-    os.environ['PGSERVICEFILE'] = '/app/env/pg_service.conf'
+    os.environ.setdefault('PGSERVICEFILE', '/app/env/pg_service.conf')
 
 def run_function(service_name, function_name, schema):
     """ Connects to the PostgreSQL database and runs the specified SQL function. """
     print(f"Connecting to PostgreSQL service: {service_name}", flush=True)
-    print("Connected", flush=True)
     try:
         conn = connect(service=service_name)
-        print("Connected")
+        print("Connected", flush=True)
         cursor = conn.cursor()
         try:
             # Set the search path to the specified schema
