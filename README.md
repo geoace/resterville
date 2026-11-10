@@ -9,9 +9,9 @@ Once we complete feature testing, we'll make the repository publicly accessible 
 `git clone https://github.com/geoace/resterville.git`
 
 #### Create a copy of the .env-template file and modify it according to your needs
-`cp .env-template .env`
+`cp env/.env-template env/.env`
 
-`nano .env`
+`nano env/.env`
 
 #### Add bucket credentials as needed
 
@@ -66,6 +66,36 @@ docker push REGION-docker.pkg.dev/PROJECT_NAME/gcf-artifacts/resterville
     - When using the BUCKET variable on setup, all Bucket-related workflows will default to the provided bucket when the optional parameter is not provided. 
     - API-KEY will be the passcode required to request workflows from the server, so keep it safe! We recommend storing all sensitive information in secret manager. 
 19. Deploy and visit the GCP-provided HTTPS URL. If you see the RESTerville logo, you're good to go!
+
+# Calling the API
+Send the API key in the `X-API-Key` header. The `api_key` query or form parameter still works, but anything in the query string is recorded in Cloud Run's request logs.
+
+```shell
+curl -H "X-API-Key: $API_KEY" \
+  "https://YOUR-SERVICE.run.app/agol2pg?service=db_user&table=my_table&oid=id&url=https://services.arcgis.com/.../FeatureServer/0"
+```
+
+Responses are streamed, so the HTTP status is 200 once the job starts. The last line is `__EXIT_CODE__=0` on success and `__EXIT_CODE__=1` on failure. Check that line, not the status code.
+
+`/agol2pg` names (`table`, `schema`, `oid`, `geometry_name`) must be lowercase letters, digits and underscores, because ogr2ogr lowercases the names it creates. The `oid` column is created by ogr2ogr and must not match a field already in the service. If a table already exists without that column, drop it (and its `_attach` table) and re-run.
+
+ArcGIS tokens are only sent to ArcGIS Online, `ARCGIS_PORTAL_URL`, and hosts listed in `ARCGIS_TOKEN_HOSTS`.
+
+# Updating dependencies
+The image installs `requirements.lock`, which pins every package with hashes. After editing `requirements.txt`, or to pick up security fixes:
+
+```shell
+uv pip compile requirements.txt --python-version 3.12 \
+  --python-platform x86_64-manylinux_2_28 --generate-hashes -o requirements.lock
+```
+
+To move to a newer GDAL, build with `--build-arg GDAL_VERSION=3.13.0` (or change the default in the Dockerfile).
+
+# Tests
+```shell
+pip install -r requirements.txt pytest
+API_KEY=test python -m pytest tests
+```
 
 # Function Usage
 See API Documentation at https://resterville.org/docs.php#

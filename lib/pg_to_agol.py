@@ -11,10 +11,13 @@ See https://github.com/Esri/arcgis-python-api/blob/master/LICENSE for more infor
 import argparse
 import json
 import os
-from datetime import datetime
+import sys
+from datetime import date, datetime
+from decimal import Decimal
 
 import psycopg2
 import requests
+from psycopg2 import sql
 from arcgis.features import FeatureLayer, FeatureLayerCollection
 from arcgis.gis import GIS
 
@@ -39,7 +42,7 @@ PG_TO_ESRI_TYPE_MAP = {
 }
 
 def setup_environment():
-    os.environ['PGSERVICEFILE'] = '/app/env/pg_service.conf'
+    os.environ.setdefault('PGSERVICEFILE', '/app/env/pg_service.conf')
 
 def get_primary_key_column(service_name, schema, table):
     """Retrieve the primary key column name from a PostgreSQL table."""
@@ -149,10 +152,12 @@ def prepare_features(raw_features, ignore_fields=None):
     for item in raw_features:
         attributes = {k: v for k, v in item['attributes'].items() if k.lower() != 'objectid' and k not in ignore_fields}
         
-        # Convert datetime objects to ISO format
+        # Make values JSON serialisable
         for k, v in attributes.items():
-            if isinstance(v, datetime):
+            if isinstance(v, (datetime, date)):
                 attributes[k] = v.isoformat()
+            elif isinstance(v, Decimal):
+                attributes[k] = float(v)
 
         prepared_features.append({"attributes": attributes, "geometry": item['geometry']})
     return prepared_features
@@ -171,7 +176,7 @@ def get_token(portal_url):
         'client_secret': client_secret,
         'grant_type': 'client_credentials'
     }
-    response = requests.post(url, data=data)
+    response = requests.post(url, data=data, timeout=(10, 60))
     response_json = response.json()
     if 'error' in response_json:
         print("Error obtaining token:", response_json['error'])
@@ -179,44 +184,45 @@ def get_token(portal_url):
     return response_json.get("access_token")
 
 def fetch_data_from_postgis(service_name, schema, table, geom='geom', ignore=None, target_epsg='3857'):
+    """Read all rows from a PostGIS table, with geometry transformed to target_epsg."""
     connection = psycopg2.connect(f"service={service_name}")
-    cursor = connection.cursor()
+    try:
+        cursor = connection.cursor()
 
-    cursor.execute(f"SELECT GeometryType({geom}) FROM {schema}.{table} LIMIT 1;")
-    geom_type = cursor.fetchone()[0]
+        ignore_set = set(f.strip() for f in ignore.split(',') if f.strip()) if ignore else set()
+        ignore_set.add(geom)  # geometry is fetched separately below
 
-    ignore_set = set(ignore.split(',')) if ignore else set()
-    ignore_set.add(geom)  # Ignore the geometry column in attribute fetch
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s AND column_name NOT IN %s "
+            "ORDER BY ordinal_position",
+            (schema, table, tuple(ignore_set)))
+        columns = [row[0] for row in cursor.fetchall()]
 
-    cursor.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name NOT IN %s", (schema, table, tuple(ignore_set)))
-    columns = cursor.fetchall()
-    columns_sql = ', '.join([col[0] for col in columns if col[0] != geom])
+        # ST_ForcePolygonCW gives Esri ring order (outer clockwise, holes counter-clockwise);
+        # otherwise ArcGIS can read a PostGIS outer ring as a hole.
+        query = sql.SQL(
+            "SELECT {cols}, ST_AsGeoJSON(ST_ForcePolygonCW(ST_Transform({geom}, %s))) FROM {tbl}").format(
+            cols=sql.SQL(', ').join(sql.Identifier(c) for c in columns),
+            geom=sql.Identifier(geom),
+            tbl=sql.Identifier(schema, table))
+        cursor.execute(query, (int(target_epsg),))
 
-    query = f"SELECT {columns_sql}, ST_AsGeoJSON(ST_Transform({geom}, {int(target_epsg)})) as geom FROM {schema}.{table};"
-    cursor.execute(query)
-    data = cursor.fetchall()
-
-    features = []
-    for record in data:
-        attributes = {col[0]: rec for col, rec in zip(columns, record[:-1])}
-        esri_geom = convert_geojson_to_esri_geometry(record[-1])  # Convert GeoJSON to Esri format
-
-        features.append({"attributes": attributes, "geometry": esri_geom})
-    cursor.close()
-    connection.close()
+        features = []
+        for record in cursor.fetchall():
+            attributes = dict(zip(columns, record[:-1]))
+            esri_geom = convert_geojson_to_esri_geometry(record[-1]) if record[-1] else None
+            features.append({"attributes": attributes, "geometry": esri_geom})
+        cursor.close()
+    finally:
+        connection.close()
 
     return features
 
 
-
-
-def setup_environment():
-    # Set the PGSERVICEFILE environment variable
-    os.environ['PGSERVICEFILE'] = '/app/env/pg_service.conf'
-
-def get_feature_layer(url, token):
+def get_feature_layer(url, token, portal_url="https://www.arcgis.com"):
     """Authenticate and retrieve a feature layer."""
-    gis = GIS("https://www.arcgis.com", token=token)
+    gis = GIS(portal_url, token=token)
     feature_layer = FeatureLayer(url, gis)
     return feature_layer
 
@@ -233,6 +239,7 @@ def append_features(feature_layer, features, batch_size=100):
     """Append features to a feature layer using the ArcGIS API for Python."""
     total_features = len(features)
     add_results = []
+    failed = 0
 
     for start in range(0, total_features, batch_size):
         end = start + batch_size
@@ -242,12 +249,18 @@ def append_features(feature_layer, features, batch_size=100):
             # Send the batch features as a dictionary directly
             response = feature_layer.edit_features(adds=batch_features)
             add_results.append(response)
-            print(f"Successfully added features {start} to {end} of {total_features}")
+            batch_failed = [r for r in response.get('addResults', []) if not r.get('success')]
+            failed += len(batch_failed)
+            if batch_failed:
+                print(f"{len(batch_failed)} features failed in batch {start} to {end}: "
+                      f"{batch_failed[0].get('error')}")
+            else:
+                print(f"Successfully added features {start} to {end} of {total_features}")
         except Exception as e:
-            # Print details of the batch and exception for debugging
+            failed += len(batch_features)
             print(f"Failed to add features {start} to {end} of {total_features}: {str(e)}")
 
-    return add_results
+    return add_results, failed
 
 
 def get_postgis_srid(service_name, schema, table, geom='geom'):
@@ -256,7 +269,7 @@ def get_postgis_srid(service_name, schema, table, geom='geom'):
     cursor = connection.cursor()
 
     # Query the SRID directly from the spatial column
-    cursor.execute(f"SELECT Find_SRID('{schema}', '{table}', '{geom}')")
+    cursor.execute("SELECT Find_SRID(%s, %s, %s)", (schema, table, geom))
     srid = cursor.fetchone()[0]
 
     cursor.close()
@@ -270,8 +283,10 @@ def get_postgis_geometry_type(service_name, schema, table, geom='geom'):
     connection = psycopg2.connect(f"service={service_name}")
     cursor = connection.cursor()
     
-    cursor.execute(f"SELECT GeometryType({geom}) FROM {schema}.{table} LIMIT 1;")
-    geom_type = cursor.fetchone()[0].upper()
+    cursor.execute(sql.SQL("SELECT GeometryType({}) FROM {} LIMIT 1").format(
+        sql.Identifier(geom), sql.Identifier(schema, table)))
+    row = cursor.fetchone()
+    geom_type = (row[0] or '').upper() if row else ''
     cursor.close()
     connection.close()
 
@@ -340,15 +355,6 @@ def get_or_create_new_feature_service(token, service_name, schema, table, geom='
 
     return collection.layers[0].url
 
-def delete_all_features(feature_layer):
-    try:
-        delete_result = feature_layer.delete_features(where="1=1")  # Deletes all features
-        return delete_result
-    except Exception as e:
-        print(f"Failed to delete features: {str(e)}")
-        return None
-
-
 def main():
     parser = argparse.ArgumentParser(description='Transfer data from PostGIS to ArcGIS Online.')
     parser.add_argument('service_name', help='PostgreSQL service name for connection')
@@ -370,14 +376,14 @@ def main():
     token = get_token(args.portal_url)
     if not token:
         print("Failed to obtain token.")
-        return
+        sys.exit(1)
 
     setup_environment()
 
 
     url = args.url
 
-    feature_layer = get_feature_layer(url, token)
+    feature_layer = get_feature_layer(url, token, args.portal_url)
 
     if args.truncate.lower() == 'yes':
         print("Deleting all existing features...")
@@ -388,12 +394,11 @@ def main():
     features = fetch_data_from_postgis(args.service_name, args.schema, args.table, args.geom, args.ignore, args.target_epsg)
     prepared_features = prepare_features(features, ignore_fields)
 
-    results = append_features(feature_layer, prepared_features, args.batch)
-    # print(results)
-
-    # for feature in prepared_features:
-    #     # Print geometries cleanly formatted as JSON
-    #     print(json.dumps(feature, indent=4))
+    _, failed = append_features(feature_layer, prepared_features, args.batch)
+    if failed:
+        print(f"{failed} of {len(prepared_features)} features failed to append.")
+        sys.exit(1)
+    print(f"Appended {len(prepared_features)} features.")
 
 
 if __name__ == "__main__":
